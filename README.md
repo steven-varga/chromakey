@@ -15,4 +15,8 @@ Download and copy this script into `/usr/local/bin` then execute with
 chromakey -i path_to_background_image.png -k 0xcolor_in_hexadecimal 
 ```
 
+The live chromakey-ed videostream will be available on specified output device, usually `/dev/video1` and can be checked with ay v4l2 compatible device
+here is firefox:
+`https://webrtc.github.io/samples/src/content/devices/input-output/`
+Skype also known to work.
 
