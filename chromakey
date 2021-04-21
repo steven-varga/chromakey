@@ -2,11 +2,11 @@
 
 #  _____________________________________________________________________________
 #
-#  Copyright (c) <2015> <copyright Steven Istvan Varga, Toronto, On>
+#  Copyright (c) <2011-2021> <copyright steve varga@ vargaconsulting, Toronto, On>
 #
 #  Contact: Steven Varga
 #           steven.varga@gmail.com
-#           2019 Toronto, On Canada
+#           2019-2021 Toronto, On Canada
 #  _____________________________________________________________________________
 
 # Get command info
@@ -18,28 +18,35 @@ CMD_DIR="$(cd "$(dirname "$CMD")" && pwd -P)"
 [ "$VERBOSE" ]  		||  VERBOSE=
 [ "$DEBUG" ]    		||  DEBUG=
 [ "$SIZE" ]  			||  SIZE=1280x720
+[ "$X_POS" ]  			||  X_POS=0
+[ "$Y_POS" ]  			||  Y_POS=0
 [ "$IMAGE" ]  			||  IMAGE=
-[ "$KEY" ]  			||  KEY=0x00ff00
+[ "$KEY" ]  			||  KEY=green
+[ "$SIMILARITY" ]  		||  SIMILARITY=0.19
+[ "$BLEND" ]  			||  BLEND=0.07
 [ "$CAMERA" ]  			||  CAMERA=/dev/video0
 [ "$OUTPUT" ]  			||  OUTPUT=/dev/video1
 [ "$FRAME_RATE" ]  		||  FRAME_RATE=30
+
 
 # Show help function to be used below
 show_help() {
 	awk 'NR>1{print} /^(###|$)/{exit}' "$CMD"
     echo "chromakey replaces specified color key with background image of live video"
+	echo "when '--image' is not specified it grabs the screen at '--x_pos' and '--y_pos'"
+	echo "of area specified with '--size'"
     echo "USAGE: $(basename "$CMD") [arguments] "
 	echo "ARGS:"
 	MSG=$(awk '/^NARGS=-1; while/,/^esac; done/' "$CMD" | sed -e 's/^[[:space:]]*/  /' -e 's/|/, /' -e 's/)//' | grep '^  -')
 	EMSG=$(eval "echo \"$MSG\"")
 	echo "$EMSG"
     echo ""
-    echo "Copyright (c) <Steven Varga 2010-2019> <steven@vargaconsulting.ca, Toronto, On>"
+    echo "Copyright (c) <Steven Varga 2010-2021> <steven@vargaconsulting.ca, Toronto, On>"
 }
 
 #/bin/bash
 
-# testting webrtc with firefox (google chrome doesn't pick up the pseudo device) 
+# testing webrtc with firefox (google chrome doesn't pick up the pseudo device) 
 # https://webrtc.github.io/samples/src/content/devices/input-output/
 
 # 
@@ -70,20 +77,40 @@ NARGS=-1; while [ "$#" -ne "$NARGS" ]; do NARGS=$#; case $1 in
 
 	-k|--key)              # specify color key (DEFAULT: $KEY)
 		shift && KEY="$1" && shift && vrb "#-INFO: KEY=$KEY"; ;;
+	-m|--similarity)       # chromakey similarity (DEFAULT: $SIMILARITY)
+		shift && SIMILARITY="$1" && shift && vrb "#-INFO: SIMILARITY=$SIMILARITY"; ;;		
+	-b|--blend)              # specify color key (DEFAULT: $BLEND)
+		shift && BLEND="$1" && shift && vrb "#-INFO: BLEND=$BLEND"; ;;
     -s|--size)             # video stream size in pixels: $SIZE
 		shift && SIZE="$1" && shift && vrb "#-INFO: SIZE=$SIZE"; ;;
 	-i|--image)            # specify image for background (DEFAULT: $IMAGE)
 		shift && IMAGE="$1" && shift && vrb "#-INFO: IMAGE=$IMAGE"; ;;
 	-c|--camera)           # the real input camera device path (DEFAULT: $CAMERA)
-		shift && BID="$1" && shift && vrb "#-INFO: CAMERA=$CAMERA"; ;;
+		shift && CAMERA="$1" && shift && vrb "#-INFO: CAMERA=$CAMERA"; ;;
 	-o|--output)           # v4l2 pseudo device  (DEFAULT: $OUTPUT)
 		shift && OUTPUT="$1" && shift && vrb "#-INFO: OUTPUT=$OUTPUT"; ;;
 	-r|--rate)             # frame rate  (DEFAULT: $FRAME_RATE)
 		shift && FRAME_RATE="$1" && shift && vrb "#-INFO: FRAME_RATE=$FRAME_RATE"; ;;
+	-x|--x_pos)            # xgrab: x position   (DEFAULT: $X_POS)
+		shift && X_POS="$1" && shift && vrb "#-INFO: X_POS=$X_POS"; ;;
+	-y|--y_pos)            # xgrab: y position  (DEFAULT: $Y_POS)
+		shift && Y_POS="$1" && shift && vrb "#-INFO: Y_POS=$Y_POS"; ;;		
 esac; done
 
+# chromakey color:similarity:blend:yuv
+# sudo modprobe v4l2loopback -r && sudo modprobe v4l2loopback video_nr=2 exclusive_caps=1 card_label="green-screen"
+# ./chromakey -i /home/steven/pictures/01.png --camera /dev/video0  -o /dev/video2
 
-ffmpeg -y -hide_banner  -i $IMAGE -f v4l2 -pix_fmt mjpeg -framerate $FRAME_RATE -video_size $SIZE  -i $CAMERA -filter_complex "[1:v]colorkey=$KEY:.2:0.0[ckout];[0:v][ckout]overlay" -pix_fmt yuv420p  -f v4l2 $OUTPUT
 
-
-
+if [ -z "$IMAGE" ]; then
+	ffmpeg -hide_banner -video_size $SIZE -framerate $FRAME_RATE \
+	-f x11grab -i :0.0+$X_POS,$Y_POS \
+	-f v4l2 -pix_fmt mjpeg -framerate $FRAME_RATE -video_size $SIZE -i $CAMERA -filter_complex \
+ 	"[1:v]hflip,chromakey=$KEY:$SIMILARITY:$BLEND[ckout];[0:v][ckout]overlay" \
+ 	-pix_fmt yuv420p -f v4l2 $OUTPUT
+else  
+	ffmpeg -hide_banner -video_size $SIZE -framerate $FRAME_RATE \
+	-i $IMAGE -f v4l2 -pix_fmt mjpeg -framerate $FRAME_RATE -video_size $SIZE -i $CAMERA -filter_complex \
+ 	"[1:v]hflip,chromakey=$KEY:$SIMILARITY:$BLEND[ckout];[0:v][ckout]overlay" \
+ 	-pix_fmt yuv420p -f v4l2 $OUTPUT
+fi
